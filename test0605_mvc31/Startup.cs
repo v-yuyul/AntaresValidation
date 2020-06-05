@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,7 +49,36 @@ namespace test0605_mvc31
             app.UseRouting();
 
             app.UseAuthorization();
+            app.Use(async (context, next) =>
+            {
+                string GetSharedFxVersion(Type type)
+                {
+                    var asmPath = type.Assembly.Location;
+                    var versionFile = Path.Combine(Path.GetDirectoryName(asmPath), ".version");
 
+                    var simpleVersion = File.Exists(versionFile) ?
+                        File.ReadAllLines(versionFile).Last() :
+                        "<unknown>";
+
+                    var infoVersion = type.Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "<unknown>";
+
+                    return $"{simpleVersion} ({infoVersion})";
+                }
+
+                if (context.Request.Path.StartsWithSegments("/.runtime-info"))
+                {
+                    context.Response.ContentType = "text/plain";
+                    var aspnetCoreVersion = GetSharedFxVersion(typeof(IApplicationBuilder));
+                    var netCoreVersion = GetSharedFxVersion(typeof(string));
+                    await context.Response.WriteAsync($"ASP.NET Core Runtime version: {aspnetCoreVersion}{Environment.NewLine}");
+                    await context.Response.WriteAsync($".NET Core Runtime version: {netCoreVersion}{Environment.NewLine}");
+                    await context.Response.WriteAsync($"Process Architecture: {RuntimeInformation.ProcessArchitecture}{Environment.NewLine}");
+                }
+                else
+                {
+                    await next();
+                }
+            });
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllerRoute(
